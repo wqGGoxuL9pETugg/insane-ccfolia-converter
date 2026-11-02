@@ -58,6 +58,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 footer { color:#45463f; border-top:1px solid #55564d; padding:18px 0; }
 a { color:#911421; }
 @media(max-width:600px) { main { padding:20px 14px; } h1 { font-size:22px; letter-spacing:-.04em; } h1::before { margin-right:8px; height:20px; width:6px; } .panel { padding:16px; border-radius:19px 19px 0 0; } .output { border-radius:0; } .tabs button { min-width:0; flex:1; padding:10px 6px; font-size:13px; } .layout { gap:0; } }
+.memo-options { margin-top:16px; }
+.memo-options fieldset { min-width:0; margin:0 0 12px; padding:0; border:0; }
+.memo-options legend { padding:0; margin-bottom:6px; font-weight:700; }
+.memo-options .choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px 12px; }
+.memo-options label { display:flex; align-items:center; gap:8px; min-height:36px; color:#34352e; cursor:pointer; }
+.memo-options input { flex:none; margin:0; }
+@media(max-width:600px) { .memo-options .choices { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 </head>
 <body><main>
@@ -70,7 +77,8 @@ a { color:#911421; }
 <section class="panel pc-only"><div class="row" style="justify-content:space-between"><h2>03 / 特技表</h2><span id="skillSummary"></span></div><p class="muted"><small>クリック：未習得 → 習得 → ※恐怖心 → 未習得。Shift＋クリック：恐怖心だけ切替（習得と併用可能）。分野名で好奇心を指定／解除。</small></p><div class="scroll"><table class="skills" id="skillTable" aria-label="特技と目標値"></table></div><div id="gapControls" class="gap-controls"></div><div class="row" style="margin-top:12px"><label><input type="checkbox" id="colLoop"> f：怪異 ↔ 暴力の折り返し</label><label><input type="checkbox" id="fearCheck"> 恐怖心の判定に −2 を適用</label></div><p><small>黒帯は埋まったギャップです。ギャップは手動調整できます。習得が0個のときは目標値未確定（?）になります。</small></p></section>
 <section class="panel"><h2>04 / アビリティ</h2><p class="muted"><small>名前のみのプリセットです。一覧にない名前は自由入力してください。効果は必要に応じて記入します。チャットパレットに出力します。</small></p><div id="abilities"></div><button id="addAbility">＋ アビリティ</button><datalist id="abilityNames"></datalist></section>
 <section class="panel pc-only"><h2>05 / 人物・アイテム</h2><h3>人物（最大7人）</h3><div id="people"></div><button id="addPerson">＋ 人物</button><h3>持ち物</h3><p><small>名前と個数を駒のステータスに追加します。個数0の持ち物も含みます。</small></p><div id="items"></div><button id="addItem">＋ アイテム</button></section>
-<section class="panel pc-only"><h2>06 / メモ</h2><div id="memoFields" class="fields"></div><p><small>ここに入力した内容・人物の秘密・使命も駒のメモに含まれます。右のプレビューで確認してください。</small></p></section>
+<section class="panel pc-only"><h2>06 / メモ</h2><div id="memoFields" class="fields"></div><p><small>駒のメモに含める項目は、下の「駒メモの出力設定」で選択できます。</small></p></section>
+<section class="panel"><h2>07 / 駒メモの出力設定</h2><p><small>チェックした項目だけを駒のメモ欄に出力します。選択はこのブラウザーに自動保存されます。</small></p><div class="row"><button id="memoSelectAll" type="button">すべて選択</button><button id="memoClearAll" type="button">すべて解除</button></div><div id="memoOptions" class="memo-options"></div></section>
 </div><aside class="panel output"><div class="eyebrow">EXPORT</div><h2 id="outputName">名前未入力</h2><p id="outputStats" class="muted"></p><label for="palette">チャットパレット</label><textarea id="palette" readonly spellcheck="false"></textarea><button id="copyButton" class="primary">駒JSONをコピー</button><div id="copyStatus" role="status"></div><p><small>ココフォリアの部屋で貼り付け（Ctrl＋V）。ダイスボットは「インセイン」を選んでください。</small></p><details><summary>駒メモを確認</summary><textarea id="memoPreview" aria-label="駒メモ" readonly></textarea></details><details style="margin-top:12px"><summary>生JSON（選択してコピーできます）</summary><textarea id="jsonOutput" aria-label="駒JSON" readonly spellcheck="false"></textarea><button id="selectJson">JSONを全選択</button></details><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><button id="resetButton" class="delete">全消去（PC・エネミー両方）</button></aside></div>
 <footer>外部ライブラリなし。入力はこのブラウザーに自動保存されます。通信は倉庫読み込み時のみ。<br>計算参考：<a href="https://character-sheets.appspot.com/common/js/dice_fiction.js" target="_blank" rel="noreferrer">キャラクターシート倉庫</a> ／ 表コマンド：<a href="https://github.com/bcdice/BCDice/blob/master/lib/bcdice/game_system/Insane.rb" target="_blank" rel="noreferrer">BCDice Insane</a>。本ツールは非公式です。</footer>
 </main>
@@ -100,13 +108,23 @@ const integer=(v,fallback=0,min=0,max=999999)=>v==null||v===''||!Number.isFinite
 const array=v=>Array.isArray(v)?v.filter(x=>x&&typeof x==='object'):[];
 const cellIndex=(r,c)=>r*6+c;
 const KEY='insane-ccfolia-v1';
+const MEMO_GROUPS={
+  pc:[
+    ['基本情報',[['nameKana','カナ'],['age','年齢'],['sex','性別'],['cover','職業'],['exp','功績点'],['player','プレイヤー名']]],
+    ['人物',[['peopleName','名前'],['peoplePlace','居所'],['peopleSecret','秘密'],['peopleEmotion','感情']]],
+    ['シナリオ・メモ',[['scenario','シナリオ名'],['mission','使命'],['handout','ハンドアウト'],['extra','その他（補足情報）'],['memo','メモ']]]
+  ],
+  enemy:[['エネミー',[['weakness','弱点特技'],['actions','主な行動'],['memo','説明']]]]
+};
+function blankMemoOptions(){return Object.fromEntries(Object.entries(MEMO_GROUPS).map(([mode,groups])=>[mode,Object.fromEntries(groups.flatMap(([,fields])=>fields.map(([key])=>[key,true])))]));}
+function restoreMemoOptions(saved){const options=blankMemoOptions();for(const mode of Object.keys(options))for(const key of Object.keys(options[mode]))if(typeof saved?.[mode]?.[key]==='boolean')options[mode][key]=saved[mode][key];return options;}
 
 // ===== 状態：モード間で入力を独立させる =====
 function blankPC(){return {name:'',nameKana:'',age:'',sex:'',cover:'',exp:'0',player:'',iconUrl:'',color:'#8b0000',externalUrl:'',initiative:0,hp:6,hpMax:6,san:6,sanMax:6,autoStats:true,curiosity:'',gaps:[false,false,false,false,false],colLoop:false,fearCheck:false,learned:Array(66).fill(false),fear:Array(66).fill(false),abilities:[],people:[],items:['鎮痛剤','武器','お守り'].map(name=>({name,count:0,effect:''})),memo:'',mission:'',handout:'',scenario:'',extra:''};}
 function blankEnemy(){return {name:'',hp:6,hpMax:6,weakness:'',actions:'',memo:'',abilities:[]};}
-let state={version:1,mode:'pc',pc:blankPC(),enemy:blankEnemy()};
+let state={version:1,mode:'pc',pc:blankPC(),enemy:blankEnemy(),memoOptions:blankMemoOptions()};
 function current(){return state[state.mode];}
-function restore(){try{const raw=localStorage.getItem(KEY);if(!raw)return;const s=JSON.parse(raw);if(s.version!==1||!s.pc||!s.enemy)throw Error('保存形式が異なります');state={version:1,mode:s.mode==='enemy'?'enemy':'pc',pc:Object.assign(blankPC(),s.pc),enemy:Object.assign(blankEnemy(),s.enemy)};for(const k of ['learned','fear'])state.pc[k]=Array.from({length:66},(_,i)=>checked(state.pc[k]?.[i]));state.pc.gaps=Array.from({length:5},(_,i)=>checked(state.pc.gaps?.[i]));for(const k of ['abilities','people','items'])state.pc[k]=array(state.pc[k]);state.pc.people=state.pc.people.slice(0,7);state.enemy.abilities=array(state.enemy.abilities);}catch(e){$('saveStatus').textContent='保存データを復元できませんでした。手入力で使用できます。';}}
+function restore(){try{const raw=localStorage.getItem(KEY);if(!raw)return;const s=JSON.parse(raw);if(s.version!==1||!s.pc||!s.enemy)throw Error('保存形式が異なります');state={version:1,mode:s.mode==='enemy'?'enemy':'pc',pc:Object.assign(blankPC(),s.pc),enemy:Object.assign(blankEnemy(),s.enemy),memoOptions:restoreMemoOptions(s.memoOptions)};for(const k of ['learned','fear'])state.pc[k]=Array.from({length:66},(_,i)=>checked(state.pc[k]?.[i]));state.pc.gaps=Array.from({length:5},(_,i)=>checked(state.pc.gaps?.[i]));for(const k of ['abilities','people','items'])state.pc[k]=array(state.pc[k]);state.pc.people=state.pc.people.slice(0,7);state.enemy.abilities=array(state.enemy.abilities);}catch(e){$('saveStatus').textContent='保存データを復元できませんでした。手入力で使用できます。';}}
 let saveTimer;
 function save(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(state));$('saveStatus').textContent='このブラウザーに保存済み';}catch(e){$('saveStatus').textContent='自動保存できません。閉じる前にJSONをコピーしてください。';}},180);}
 
@@ -136,10 +154,39 @@ function renderList(kind){const a=kind==='abilities'?current():state.pc;const co
 
 // ===== 駒JSON・パレット =====
 function palette(p,mode){const lines=['2D6>=5 【判定】'];if(mode==='pc'){CATEGORIES.forEach((cat,c)=>{lines.push(`―― ${p.curiosity===CURIOSITY[c+1]?'◎':''}${cat} ――`);SKILLS.forEach((row,r)=>{const i=cellIndex(r,c);lines.push(`${formula(p,r,c)} ${p.fear[i]?'※':''}【${row[c]}】`);});});}const abilities=p.abilities.filter(x=>x.name||x.effect);if(abilities.length){lines.push('―― アビリティ ――',...abilities.map(x=>[`【${str(x.name)||'名称未入力'}】`,x.type,x.targetSkill?'指定特技：'+x.targetSkill:'',x.effect,x.page?'参照：'+x.page:''].filter(Boolean).map(v=>str(v).replace(/\r?\n/g,' / ')).join(' ')));}lines.push('―― 表 ――',...TABLES.map(t=>t.join(' ')),'―― 戦闘 ――','1D6 ダメージ');return lines.join('\n');}
-function makeMemo(p,mode){const sections=[];const add=(label,value)=>{if(str(value).trim())sections.push(`【${label}】\n${str(value)}`);};if(mode==='pc'){add('基本情報',[['カナ',p.nameKana],['年齢',p.age],['性別',p.sex],['職業',p.cover],['功績点',p.exp],['プレイヤー',p.player]].filter(x=>str(x[1])).map(x=>x.join('：')).join('\n'));add('人物',p.people.map(x=>[['名前',x.name],['居所',x.place],['秘密',x.secret],['感情',str(x.direction)+str(x.emotion)]].filter(x=>str(x[1])).map(x=>x.join('：')).join(' / ')).filter(Boolean).join('\n'));add('シナリオ',p.scenario);add('使命',p.mission);add('ハンドアウト',p.handout);add('補足',p.extra);}else{add('弱点特技',p.weakness);add('主な行動',p.actions);}add(mode==='pc'?'メモ':'説明',p.memo);return sections.join('\n\n');}
+function makeMemo(p,mode,options=state.memoOptions[mode]){
+  const sections=[],include=key=>options[key]!==false;
+  const add=(label,value)=>{if(str(value).trim())sections.push(`【${label}】\n${str(value)}`);};
+  if(mode==='pc'){
+    add('基本情報',[['nameKana','カナ'],['age','年齢'],['sex','性別'],['cover','職業'],['exp','功績点'],['player','プレイヤー']].filter(([key])=>include(key)&&str(p[key])).map(([key,label])=>label+'：'+str(p[key])).join('\n'));
+    add('人物',p.people.map(x=>[['peopleName','名前',x.name],['peoplePlace','居所',x.place],['peopleSecret','秘密',x.secret],['peopleEmotion','感情',str(x.direction)+str(x.emotion)]].filter(([key,,value])=>include(key)&&str(value)).map(([,label,value])=>label+'：'+str(value)).join(' / ')).filter(Boolean).join('\n'));
+    for(const [key,label] of [['scenario','シナリオ'],['mission','使命'],['handout','ハンドアウト'],['extra','補足']])if(include(key))add(label,p[key]);
+  }else{
+    if(include('weakness'))add('弱点特技',p.weakness);
+    if(include('actions'))add('主な行動',p.actions);
+  }
+  if(include('memo'))add(mode==='pc'?'メモ':'説明',p.memo);
+  return sections.join('\n\n');
+}
+function renderMemoOptions(){
+  const container=$('memoOptions');container.replaceChildren();
+  for(const [title,fields] of MEMO_GROUPS[state.mode]){
+    const group=document.createElement('fieldset'),legend=document.createElement('legend'),choices=document.createElement('div');
+    legend.textContent=title;choices.className='choices';group.append(legend,choices);
+    for(const [key,text] of fields){
+      const label=document.createElement('label'),input=document.createElement('input');
+      input.type='checkbox';input.id='memo-option-'+key;input.checked=state.memoOptions[state.mode][key];
+      input.onchange=()=>{state.memoOptions[state.mode][key]=input.checked;refresh();};
+      label.append(input,text);choices.append(label);
+    }
+    container.append(group);
+  }
+}
+function setAllMemoOptions(value){for(const key of Object.keys(state.memoOptions[state.mode]))state.memoOptions[state.mode][key]=value;renderMemoOptions();refresh();}
+
 function makeToken(p,mode){const pc=mode==='pc';const status=[{label:'生命力',value:integer(p.hp),max:integer(p.hpMax)}];if(pc){status.push({label:'正気度',value:integer(p.san),max:integer(p.sanMax)});for(const item of p.items){const name=str(item.name).trim();if(name)status.push({label:name,value:integer(item.count),max:integer(item.count)});}}const params=pc?[{label:'好奇心',value:CATEGORIES[CURIOSITY.indexOf(p.curiosity)-1]||''},{label:'恐怖心',value:ALL_SKILLS.filter((_,i)=>p.fear[i]).join('、')},{label:'職業',value:str(p.cover)}]:[{label:'弱点特技',value:str(p.weakness)}];return {kind:'character',data:{name:str(p.name),memo:makeMemo(p,mode),initiative:pc?integer(p.initiative,0,-999999):0,externalUrl:pc?str(p.externalUrl):'',status,params,iconUrl:pc?str(p.iconUrl):'',commands:palette(p,mode),x:0,y:0,z:0,width:2,height:2,active:true,secret:false,invisible:false,hideStatus:false,color:pc&&/^#[\da-f]{6}$/i.test(p.color)?p.color:'#8b0000',owner:null}};}
 function refresh(){updateStats();const p=state.pc;document.querySelectorAll('[data-skill]').forEach(b=>{const i=Number(b.dataset.skill),r=Math.floor(i/6),c=i%6;b.className=[p.learned[i]?'learned':'',p.fear[i]?'fear':''].join(' ');const n=target(p,r,c);b.textContent=`${p.fear[i]?'※':''}${SKILLS[r][c]}`;const small=document.createElement('span');small.className='target';small.textContent=n===null?'目標 —':`目標 ${n}${p.fearCheck&&p.fear[i]?' / −2':''}`;b.append(small);b.setAttribute('aria-label',`${SKILLS[r][c]} ${p.learned[i]?'習得 ':''}${p.fear[i]?'恐怖心 ':''}${small.textContent}`);});document.querySelectorAll('[data-category]').forEach(b=>b.setAttribute('aria-pressed',String(p.curiosity===CURIOSITY[Number(b.dataset.category)+1])));document.querySelectorAll('[data-gap]').forEach(e=>e.classList.toggle('filled',p.gaps[Number(e.dataset.gap)]));'abcde'.split('').forEach((g,i)=>$('gap-'+g).checked=p.gaps[i]);$('colLoop').checked=p.colLoop;$('fearCheck').checked=p.fearCheck;$('autoStats').checked=p.autoStats;$('skillSummary').textContent=`習得 ${p.learned.filter(Boolean).length} / 恐怖心 ${p.fear.filter(Boolean).length}`;for(const key of ['hp','hpMax','san','sanMax']){const e=$('field-'+key);if(e&&document.activeElement!==e)e.value=current()[key];}const token=makeToken(current(),state.mode);$('palette').value=token.data.commands;$('jsonOutput').value=JSON.stringify(token);$('memoPreview').value=token.data.memo;$('outputName').textContent=token.data.name||'名前未入力';$('outputStats').replaceChildren(...token.data.status.map(x=>{const badge=document.createElement('span');badge.className='status-chip';badge.textContent=`${x.label} ${x.value} / ${x.max}`;return badge;}));save();}
-function render(){document.querySelectorAll('.pc-only').forEach(e=>e.hidden=state.mode!=='pc');document.querySelectorAll('.enemy-only').forEach(e=>e.hidden=state.mode!=='enemy');$('pcTab').setAttribute('aria-pressed',String(state.mode==='pc'));$('enemyTab').setAttribute('aria-pressed',String(state.mode==='enemy'));renderBasic();renderGrid();for(const k of ['abilities','people','items'])renderList(k);refresh();}
+function render(){document.querySelectorAll('.pc-only').forEach(e=>e.hidden=state.mode!=='pc');document.querySelectorAll('.enemy-only').forEach(e=>e.hidden=state.mode!=='enemy');$('pcTab').setAttribute('aria-pressed',String(state.mode==='pc'));$('enemyTab').setAttribute('aria-pressed',String(state.mode==='enemy'));renderBasic();renderGrid();renderMemoOptions();for(const k of ['abilities','people','items'])renderList(k);refresh();}
 
 // ===== 倉庫JSON：null防御・習得/恐怖心の独立保持 =====
 function importSheet(data,url){if(!data||typeof data!=='object'||!data.base||typeof data.base!=='object')throw Error('キャラクターデータがありません。公開設定とURLを確認してください。');const p=blankPC(),b=data.base,s=data.skills||{};for(const key of ['name','nameKana','age','sex','cover','exp','player','memo'])p[key]=str(b[key]);p.externalUrl=url;p.curiosity=CURIOSITY.includes(b.curiosity)?b.curiosity:'';p.gaps='abcde'.split('').map(g=>p.curiosity.includes(g)||checked(s[g]));p.colLoop=checked(s.f);p.fearCheck=checked(data.fearCheck);array(data.learned).forEach(x=>{const m=/^skills\.row(\d+)\.name(\d+)$/.exec(str(x.id));if(m&&Number(m[1])<11&&Number(m[2])<6)p.learned[cellIndex(Number(m[1]),Number(m[2]))]=true;});const names=str(b.nightmare).split(/[,、]/).map(x=>x.trim());for(let r=0;r<11;r++)for(let c=0;c<6;c++){const row=s['row'+r];p.fear[cellIndex(r,c)]=row&&Object.prototype.hasOwnProperty.call(row,'check'+c)?checked(row['check'+c]):names.includes(SKILLS[r][c]);}p.autoStats=false;p.hpMax=integer(data.hitpoint?.max,6,0,12);p.hp=integer(data.hitpoint?.value,p.hpMax,0,p.hpMax);const sanDefault=Math.max(0,6-p.learned.filter((v,i)=>v&&i%6===5).length);p.sanMax=integer(data.sanepoint?.max,sanDefault,0,12);p.san=integer(data.sanepoint?.value,p.sanMax,0,p.sanMax);p.abilities=array(data.ability).map(x=>Object.fromEntries(['name','type','targetSkill','effect','page'].map(k=>[k,str(x[k])])));p.items=array(data.item).map(x=>({name:str(x.name),count:integer(x.count),effect:str(x.effect)}));if(!p.items.length)p.items=blankPC().items;const people=array(data.personalities);p.people=people.slice(0,7).map(x=>{const direction=str(x.direction);const neg=['2','-','−','－','マイナス'].includes(direction);let emotion=str(x.emotion);if(/^[1-6]$/.test(emotion))emotion=EMOTIONS[Number(emotion)+(neg?6:0)];return {name:str(x.name),place:str(x.place),secret:str(x.secret),emotion,direction:neg?'−':['1','+','＋','プラス'].includes(direction)?'＋':direction};});p.mission=str(data.scenario?.mission);p.handout=str(data.scenario?.handout);p.scenario=str(data.scenario?.name);p.extra=[str(data.outline),...array(data.prop).map(x=>[x.name,x.mark,x.memo].filter(Boolean).join(' / ')),...array(data.past).map(x=>[x.name,x.memo,x.fateinsane].filter(Boolean).join(' / ')),...people.slice(7).map(x=>Object.values(x).map(str).join(' / '))].filter(Boolean).join('\n');let color=str(data.dodontof?.color);if(/^[\da-f]{6}$/i.test(color))color='#'+color;if(/^#[\da-f]{6}$/i.test(color))p.color=color;return p;}
@@ -150,6 +197,8 @@ $('importButton').onclick=async()=>{let parsed;try{parsed=sheetURL($('importUrl'
 
 // ===== コピー・操作 =====
 $('copyButton').onclick=async()=>{const text=$('jsonOutput').value;try{if(!navigator.clipboard?.writeText)throw Error('fallback');await Promise.race([navigator.clipboard.writeText(text),new Promise((_,reject)=>setTimeout(()=>reject(Error('clipboard timeout')),2500))]);$('copyStatus').textContent='コピーしました。ココフォリアに貼り付けできます。';}catch(e){const t=$('jsonOutput');t.closest('details').open=true;t.focus();t.select();try{if(!document.execCommand('copy'))throw Error('copy');$('copyStatus').textContent='コピーしました。';}catch(e){$('copyStatus').textContent='自動コピーできません。選択中のJSONをCtrl＋Cでコピーしてください。';}}};
+$('memoSelectAll').onclick=()=>setAllMemoOptions(true);
+$('memoClearAll').onclick=()=>setAllMemoOptions(false);
 $('selectJson').onclick=()=>{$('jsonOutput').focus();$('jsonOutput').select();};
 $('pcTab').onclick=()=>{state.mode='pc';render();};$('enemyTab').onclick=()=>{state.mode='enemy';render();};
 $('addAbility').onclick=()=>{current().abilities.push({name:'',type:'',targetSkill:'',effect:'',page:''});renderList('abilities');refresh();};
@@ -157,7 +206,7 @@ $('addPerson').onclick=()=>{if(state.pc.people.length<7)state.pc.people.push({na
 $('addItem').onclick=()=>{state.pc.items.push({name:'',count:0,effect:''});renderList('items');refresh();};
 $('autoStats').onchange=()=>{state.pc.autoStats=$('autoStats').checked;refresh();};
 for(const key of ['colLoop','fearCheck'])$(key).onchange=()=>{state.pc[key]=$(key).checked;refresh();};
-$('resetButton').onclick=()=>{if(!confirm('PC・エネミーの全入力と自動保存を消去しますか？'))return;importGeneration++;state={version:1,mode:'pc',pc:blankPC(),enemy:blankEnemy()};$('importUrl').value='';$('importStatus').textContent='';$('copyStatus').textContent='';render();};
+$('resetButton').onclick=()=>{if(!confirm('PC・エネミーの全入力と自動保存を消去しますか？'))return;importGeneration++;state={version:1,mode:'pc',pc:blankPC(),enemy:blankEnemy(),memoOptions:blankMemoOptions()};$('importUrl').value='';$('importStatus').textContent='';$('copyStatus').textContent='';render();};
 Object.entries(ABILITY_NAMES).forEach(([group,names])=>names.forEach(name=>{const option=document.createElement('option');option.value=name;option.label=group;$('abilityNames').append(option);}));
 
 // ===== 起動時セルフテスト（実際の出力関数を通す） =====
